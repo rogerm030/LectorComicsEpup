@@ -8,14 +8,19 @@ import androidx.lifecycle.viewModelScope
 import com.example.lectorcomicsylibros.data.local.AppDatabase
 import com.example.lectorcomicsylibros.data.model.MediaItem
 import com.example.lectorcomicsylibros.data.repository.LibraryRepository
+import com.example.lectorcomicsylibros.data.settings.ReadingColorScheme
+import com.example.lectorcomicsylibros.data.settings.SettingsRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.update
-import com.example.lectorcomicsylibros.data.settings.ReadingColorScheme
-import com.example.lectorcomicsylibros.data.settings.SettingsRepository
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+
+enum class EpubScrollMode {
+    VERTICAL,
+    HORIZONTAL
+}
 
 enum class EpubFontFamily(val displayName: String) {
     SANS_SERIF("Sans-serif"),
@@ -46,7 +51,8 @@ data class EpubReaderUiState(
     val marginDp: Int = 16,
     val readerTheme: EpubReaderTheme = EpubReaderTheme.LIGHT,
     val showTocSheet: Boolean = false,
-    val showSettingsSheet: Boolean = false
+    val showSettingsSheet: Boolean = false,
+    val scrollMode: EpubScrollMode = EpubScrollMode.VERTICAL
 )
 
 class EpubReaderViewModel(
@@ -139,6 +145,15 @@ class EpubReaderViewModel(
         viewModelScope.launch {
             repository.updateReadingProgress(itemId, clamped, total)
         }
+    }
+
+    fun toggleScrollMode() {
+        val newMode = if (_uiState.value.scrollMode == EpubScrollMode.VERTICAL) {
+            EpubScrollMode.HORIZONTAL
+        } else {
+            EpubScrollMode.VERTICAL
+        }
+        _uiState.update { it.copy(scrollMode = newMode) }
     }
 
     fun updateFontFamily(fontFamily: EpubFontFamily) {

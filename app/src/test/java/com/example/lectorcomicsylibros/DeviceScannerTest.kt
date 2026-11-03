@@ -55,13 +55,13 @@ class DeviceScannerTest {
 
     @Test
     fun testFileFormatIdentificationForScanner() {
-        val supportedFiles = listOf("test.cbz", "manga.cbr", "book.epub", "document.pdf")
+        val supportedFiles = listOf("test.cbz", "manga.cbr", "book.epub", "document.pdf", "archive.zip", "manga.rar")
         supportedFiles.forEach { fileName ->
             val format = MediaFormat.fromFileNameOrMime(fileName)
             assertTrue("Format should not be UNKNOWN for $fileName", format != MediaFormat.UNKNOWN)
         }
 
-        val unsupportedFiles = listOf("image.png", "notes.txt", "archive.zip", "audio.mp3")
+        val unsupportedFiles = listOf("image.png", "notes.txt", "audio.mp3")
         unsupportedFiles.forEach { fileName ->
             val format = MediaFormat.fromFileNameOrMime(fileName)
             assertEquals(MediaFormat.UNKNOWN, format)

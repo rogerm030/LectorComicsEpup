@@ -34,15 +34,10 @@ class FullDeviceScanner(
     val scanProgress: StateFlow<ScanProgressState> = _scanProgress.asStateFlow()
 
     fun hasStoragePermission(): Boolean {
-        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && Environment.isExternalStorageManager()) {
-            true
-        } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            val hasImages = ContextCompat.checkSelfPermission(context, Manifest.permission.READ_MEDIA_IMAGES) == PackageManager.PERMISSION_GRANTED
-            val hasRead = ContextCompat.checkSelfPermission(context, Manifest.permission.READ_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED
-            hasImages || hasRead
-        } else {
-            ContextCompat.checkSelfPermission(context, Manifest.permission.READ_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            return Environment.isExternalStorageManager()
         }
+        return ContextCompat.checkSelfPermission(context, Manifest.permission.READ_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED
     }
 
     suspend fun scanFullDevice(): Int = withContext(Dispatchers.IO) {
@@ -64,10 +59,10 @@ class FullDeviceScanner(
         var scannedCount = 0
         var importedCount = 0
         val processedKeys = mutableSetOf<String>()
-        val supportedExtensions = setOf("cbz", "cbr", "epub", "pdf")
+        val supportedExtensions = setOf("cbz", "cbr", "epub", "pdf", "zip", "rar")
 
         // 1. Query MediaStore.Files
-        val mediaStoreFiles = queryMediaStore()
+        val mediaStoreFiles = queryMediaStore(supportedExtensions)
         for ((contentUri, file) in mediaStoreFiles) {
             val key = file?.absolutePath ?: contentUri.toString()
             if (processedKeys.contains(key)) continue
@@ -152,7 +147,7 @@ class FullDeviceScanner(
 
     suspend fun scanDirectory(treeUri: Uri): Int = scanFullDevice()
 
-    private fun queryMediaStore(): List<Pair<Uri, File?>> {
+    private fun queryMediaStore(supportedExtensions: Set<String>): List<Pair<Uri, File?>> {
         val list = mutableListOf<Pair<Uri, File?>>()
         val collection = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             MediaStore.Files.getContentUri(MediaStore.VOLUME_EXTERNAL)
@@ -170,22 +165,32 @@ class FullDeviceScanner(
                 "${MediaStore.Files.FileColumns.DATA} LIKE '%.cbr' OR " +
                 "${MediaStore.Files.FileColumns.DATA} LIKE '%.epub' OR " +
                 "${MediaStore.Files.FileColumns.DATA} LIKE '%.pdf' OR " +
+                "${MediaStore.Files.FileColumns.DATA} LIKE '%.zip' OR " +
+                "${MediaStore.Files.FileColumns.DATA} LIKE '%.rar' OR " +
                 "${MediaStore.Files.FileColumns.DISPLAY_NAME} LIKE '%.cbz' OR " +
                 "${MediaStore.Files.FileColumns.DISPLAY_NAME} LIKE '%.cbr' OR " +
                 "${MediaStore.Files.FileColumns.DISPLAY_NAME} LIKE '%.epub' OR " +
-                "${MediaStore.Files.FileColumns.DISPLAY_NAME} LIKE '%.pdf')"
+                "${MediaStore.Files.FileColumns.DISPLAY_NAME} LIKE '%.pdf' OR " +
+                "${MediaStore.Files.FileColumns.DISPLAY_NAME} LIKE '%.zip' OR " +
+                "${MediaStore.Files.FileColumns.DISPLAY_NAME} LIKE '%.rar')"
 
         try {
             context.contentResolver.query(collection, projection, selection, null, null)?.use { cursor ->
                 val idColumn = cursor.getColumnIndexOrThrow(MediaStore.Files.FileColumns._ID)
                 val dataColumn = cursor.getColumnIndex(MediaStore.Files.FileColumns.DATA)
+                val nameColumn = cursor.getColumnIndex(MediaStore.Files.FileColumns.DISPLAY_NAME)
 
                 while (cursor.moveToNext()) {
                     val id = cursor.getLong(idColumn)
                     val contentUri = ContentUris.withAppendedId(collection, id)
                     val path = if (dataColumn != -1) cursor.getString(dataColumn) else null
+                    val name = if (nameColumn != -1) cursor.getString(nameColumn) else null
                     val file = if (!path.isNullOrBlank()) File(path) else null
-                    list.add(Pair(contentUri, file))
+
+                    val ext = (file?.extension ?: name?.substringAfterLast('.', ""))?.lowercase() ?: ""
+                    if (ext in supportedExtensions) {
+                        list.add(Pair(contentUri, file))
+                    }
                 }
             }
         } catch (e: Exception) {
@@ -201,6 +206,13 @@ class FullDeviceScanner(
         val rootDir = Environment.getExternalStorageDirectory()
         if (rootDir != null && rootDir.exists() && rootDir.canRead()) {
             startDirs.add(rootDir)
+            val subfolderNames = listOf("Download", "Download/Telegram", "Documents", "Books", "Comics", "Libros")
+            for (sub in subfolderNames) {
+                val subDir = File(rootDir, sub)
+                if (subDir.exists() && subDir.canRead() && !startDirs.contains(subDir)) {
+                    startDirs.add(subDir)
+                }
+            }
         }
 
         val publicDirNames = listOf(

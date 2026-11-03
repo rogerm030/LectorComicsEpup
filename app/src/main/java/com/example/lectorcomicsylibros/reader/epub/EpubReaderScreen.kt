@@ -6,7 +6,9 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -16,6 +18,7 @@ import androidx.compose.material.icons.filled.ChevronLeft
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.FormatSize
+import androidx.compose.material.icons.filled.SwapVert
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -30,6 +33,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -44,6 +48,7 @@ fun EpubReaderScreen(
     )
 ) {
     val uiState by viewModel.uiState.collectAsState()
+    val scope = rememberCoroutineScope()
 
     if (uiState.isLoading) {
         Box(
@@ -120,6 +125,60 @@ fun EpubReaderScreen(
     val themeBgColor = Color(uiState.readerTheme.backgroundColor)
     val themeTextColor = Color(uiState.readerTheme.textColor)
 
+    // Compute LazyColumn item index mapping for continuous vertical scroll
+    val chapterStartIndices = remember(chapters) {
+        val indices = mutableListOf<Int>()
+        var currentIndex = 0
+        chapters.forEach { ch ->
+            indices.add(currentIndex)
+            // 1 header item + paragraphs count + 1 separator item
+            currentIndex += 1 + ch.paragraphs.size + 1
+        }
+        indices
+    }
+
+    val lazyListState = rememberLazyListState(
+        initialFirstVisibleItemIndex = chapterStartIndices.getOrElse(currentChapterIndex) { 0 }
+    )
+
+    val pagerState = rememberPagerState(
+        initialPage = currentChapterIndex,
+        pageCount = { totalChapters }
+    )
+
+    // Sync HorizontalPager -> ViewModel
+    LaunchedEffect(pagerState.currentPage, uiState.scrollMode) {
+        if (uiState.scrollMode == EpubScrollMode.HORIZONTAL) {
+            viewModel.onChapterChanged(pagerState.currentPage)
+        }
+    }
+
+    // Sync Vertical LazyColumn -> ViewModel
+    LaunchedEffect(lazyListState, uiState.scrollMode, chapterStartIndices) {
+        if (uiState.scrollMode == EpubScrollMode.VERTICAL) {
+            snapshotFlow { lazyListState.firstVisibleItemIndex }.collect { firstIndex ->
+                val activeChapter = chapterStartIndices.indexOfLast { it <= firstIndex }
+                if (activeChapter >= 0 && activeChapter != uiState.currentChapterIndex) {
+                    viewModel.onChapterChanged(activeChapter)
+                }
+            }
+        }
+    }
+
+    // Function to jump to chapter index safely
+    val jumpToChapter: (Int) -> Unit = { targetIndex ->
+        val clamped = targetIndex.coerceIn(0, totalChapters - 1)
+        viewModel.onChapterChanged(clamped)
+        scope.launch {
+            if (uiState.scrollMode == EpubScrollMode.HORIZONTAL) {
+                pagerState.scrollToPage(clamped)
+            } else {
+                val itemIndex = chapterStartIndices.getOrElse(clamped) { 0 }
+                lazyListState.scrollToItem(itemIndex)
+            }
+        }
+    }
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -150,6 +209,19 @@ fun EpubReaderScreen(
                     }
                 },
                 actions = {
+                    IconButton(onClick = { viewModel.toggleScrollMode() }) {
+                        Icon(
+                            imageVector = if (uiState.scrollMode == EpubScrollMode.VERTICAL)
+                                Icons.Default.SwapVert
+                            else
+                                Icons.AutoMirrored.Filled.List,
+                            contentDescription = if (uiState.scrollMode == EpubScrollMode.VERTICAL)
+                                "Modo Paginado Horizontal"
+                            else
+                                "Modo Desplazamiento Continuo Vertical",
+                            tint = themeTextColor
+                        )
+                    }
                     IconButton(onClick = { viewModel.toggleTocSheet() }) {
                         Icon(
                             Icons.AutoMirrored.Filled.List,
@@ -185,11 +257,7 @@ fun EpubReaderScreen(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     IconButton(
-                        onClick = {
-                            if (currentChapterIndex > 0) {
-                                viewModel.onChapterChanged(currentChapterIndex - 1)
-                            }
-                        },
+                        onClick = { jumpToChapter(currentChapterIndex - 1) },
                         enabled = currentChapterIndex > 0
                     ) {
                         Icon(
@@ -206,11 +274,7 @@ fun EpubReaderScreen(
                     )
 
                     IconButton(
-                        onClick = {
-                            if (currentChapterIndex < totalChapters - 1) {
-                                viewModel.onChapterChanged(currentChapterIndex + 1)
-                            }
-                        },
+                        onClick = { jumpToChapter(currentChapterIndex + 1) },
                         enabled = currentChapterIndex < totalChapters - 1
                     ) {
                         Icon(
@@ -224,63 +288,98 @@ fun EpubReaderScreen(
         },
         containerColor = themeBgColor
     ) { innerPadding ->
-        LazyColumn(
+        Box(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(innerPadding),
-            contentPadding = PaddingValues(
-                horizontal = uiState.marginDp.dp,
-                vertical = 16.dp
-            )
+                .padding(innerPadding)
         ) {
-            item {
-                Text(
-                    text = currentChapter.title,
-                    style = MaterialTheme.typography.headlineMedium.copy(
-                        fontWeight = FontWeight.Bold,
-                        fontFamily = fontFamily
-                    ),
-                    color = themeTextColor,
-                    modifier = Modifier.padding(bottom = 16.dp)
-                )
-                HorizontalDivider(
-                    color = themeTextColor.copy(alpha = 0.2f),
-                    modifier = Modifier.padding(bottom = 20.dp)
-                )
-            }
-
-            items(currentChapter.paragraphs) { paragraph ->
-                Text(
-                    text = paragraph,
-                    fontSize = uiState.fontSizeSp.sp,
-                    lineHeight = (uiState.fontSizeSp * uiState.lineSpacingMultiplier).sp,
-                    fontFamily = fontFamily,
-                    color = themeTextColor,
-                    modifier = Modifier.padding(bottom = 14.dp)
-                )
-            }
-
-            item {
-                Spacer(modifier = Modifier.height(24.dp))
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween
+            if (uiState.scrollMode == EpubScrollMode.VERTICAL) {
+                LazyColumn(
+                    state = lazyListState,
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(
+                        horizontal = uiState.marginDp.dp,
+                        vertical = 16.dp
+                    )
                 ) {
-                    if (currentChapterIndex > 0) {
-                        OutlinedButton(
-                            onClick = { viewModel.onChapterChanged(currentChapterIndex - 1) }
-                        ) {
-                            Text("Anterior capítulo")
+                    chapters.forEach { ch ->
+                        item {
+                            Column {
+                                Spacer(modifier = Modifier.height(16.dp))
+                                Text(
+                                    text = ch.title,
+                                    style = MaterialTheme.typography.headlineMedium.copy(
+                                        fontWeight = FontWeight.Bold,
+                                        fontFamily = fontFamily
+                                    ),
+                                    color = themeTextColor,
+                                    modifier = Modifier.padding(bottom = 16.dp)
+                                )
+                                HorizontalDivider(
+                                    color = themeTextColor.copy(alpha = 0.2f),
+                                    modifier = Modifier.padding(bottom = 20.dp)
+                                )
+                            }
                         }
-                    } else {
-                        Spacer(modifier = Modifier.width(1.dp))
-                    }
 
-                    if (currentChapterIndex < totalChapters - 1) {
-                        Button(
-                            onClick = { viewModel.onChapterChanged(currentChapterIndex + 1) }
-                        ) {
-                            Text("Siguiente capítulo")
+                        items(ch.paragraphs) { paragraph ->
+                            Text(
+                                text = paragraph,
+                                fontSize = uiState.fontSizeSp.sp,
+                                lineHeight = (uiState.fontSizeSp * uiState.lineSpacingMultiplier).sp,
+                                fontFamily = fontFamily,
+                                color = themeTextColor,
+                                modifier = Modifier.padding(bottom = 14.dp)
+                            )
+                        }
+
+                        item {
+                            Spacer(modifier = Modifier.height(32.dp))
+                            HorizontalDivider(
+                                color = themeTextColor.copy(alpha = 0.15f),
+                                modifier = Modifier.padding(vertical = 16.dp)
+                            )
+                        }
+                    }
+                }
+            } else {
+                HorizontalPager(
+                    state = pagerState,
+                    modifier = Modifier.fillMaxSize()
+                ) { pageIndex ->
+                    val ch = chapters[pageIndex]
+                    LazyColumn(
+                        modifier = Modifier.fillMaxSize(),
+                        contentPadding = PaddingValues(
+                            horizontal = uiState.marginDp.dp,
+                            vertical = 16.dp
+                        )
+                    ) {
+                        item {
+                            Text(
+                                text = ch.title,
+                                style = MaterialTheme.typography.headlineMedium.copy(
+                                    fontWeight = FontWeight.Bold,
+                                    fontFamily = fontFamily
+                                ),
+                                color = themeTextColor,
+                                modifier = Modifier.padding(bottom = 16.dp)
+                            )
+                            HorizontalDivider(
+                                color = themeTextColor.copy(alpha = 0.2f),
+                                modifier = Modifier.padding(bottom = 20.dp)
+                            )
+                        }
+
+                        items(ch.paragraphs) { paragraph ->
+                            Text(
+                                text = paragraph,
+                                fontSize = uiState.fontSizeSp.sp,
+                                lineHeight = (uiState.fontSizeSp * uiState.lineSpacingMultiplier).sp,
+                                fontFamily = fontFamily,
+                                color = themeTextColor,
+                                modifier = Modifier.padding(bottom = 14.dp)
+                            )
                         }
                     }
                 }
@@ -324,7 +423,7 @@ fun EpubReaderScreen(
                             val isSelected = item.chapterIndex == currentChapterIndex
                             Surface(
                                 onClick = {
-                                    viewModel.onChapterChanged(item.chapterIndex)
+                                    jumpToChapter(item.chapterIndex)
                                     viewModel.closeTocSheet()
                                 },
                                 shape = RoundedCornerShape(8.dp),

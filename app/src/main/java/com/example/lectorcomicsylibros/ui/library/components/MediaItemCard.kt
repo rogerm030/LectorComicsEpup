@@ -63,10 +63,18 @@ fun MediaItemCard(
                     .background(MaterialTheme.colorScheme.secondaryContainer)
             ) {
                 // Cover Image or Placeholder
-                val hasCover = !item.coverPath.isNullOrBlank() && File(item.coverPath).exists()
-                if (hasCover) {
+                val coverPath = item.coverPath
+                val coverFile = remember(coverPath) {
+                    if (!coverPath.isNullOrBlank()) {
+                        val cleanPath = if (coverPath.startsWith("file://")) coverPath.removePrefix("file://") else coverPath
+                        File(cleanPath)
+                    } else null
+                }
+                val hasCover = coverFile != null && coverFile.exists()
+
+                if (hasCover && coverPath != null) {
                     AsyncImage(
-                        model = File(item.coverPath!!),
+                        model = coverPath,
                         contentDescription = item.title,
                         modifier = Modifier.fillMaxSize(),
                         contentScale = ContentScale.Crop

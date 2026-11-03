@@ -1,0 +1,81 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- Open Book Cover & Page Outer Contour -->
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M21,35 C34,38 46,38 54,40 C62,38 74,38 87,35 L87,75 C74,78 62,78 54,76 C46,78 34,78 21,75 Z"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="2" />
+
+    <!-- Center Spine Fold Line -->
+    <path
+        android:pathData="M54,40 L54,76"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="2" />
+
+    <!-- LEFT PAGE: Comic Panel Layout (White Filled Panels) -->
+    <!-- Panel 1 (Top Left) -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M26,37.5 L37,39 L37,49.5 L26,48 Z" />
+
+    <!-- Panel 2 (Top Right on Left Page) -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M39,39.3 L50,40.6 L50,51 L39,49.7 Z" />
+
+    <!-- Panel 3 (Bottom Wide on Left Page) -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M26,51 L50,54 L50,65 L26,62.5 Z" />
+
+    <!-- RIGHT PAGE: EPUB Text Lines (White Stroke Lines) -->
+    <path
+        android:pathData="M58,41.5 L78,39"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="2.5"
+        android:strokeLineCap="round" />
+    <path
+        android:pathData="M58,46.5 L74,44.5"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="2.5"
+        android:strokeLineCap="round" />
+    <path
+        android:pathData="M58,51.5 L80,49"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="2.5"
+        android:strokeLineCap="round" />
+    <path
+        android:pathData="M58,56.5 L72,54.5"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="2.5"
+        android:strokeLineCap="round" />
+    <path
+        android:pathData="M58,61.5 L79,59"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="2.5"
+        android:strokeLineCap="round" />
+    <path
+        android:pathData="M58,66.5 L69,64.5"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="2.5"
+        android:strokeLineCap="round" />
+
+    <!-- Bookmark Ribbon -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M64,28.5 L70,27.5 L70,52.5 L67,49.5 L64,52.5 Z" />
+
+    <!-- Floating Sparkles -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M30,22 L31,24 L33,25 L31,26 L30,28 L29,26 L27,25 L29,24 Z" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M78,22 L78.8,23.4 L80.2,24 L78.8,24.6 L78,26 L77.2,24.6 L75.8,24 L77.2,23.4 Z" />
+</vector>

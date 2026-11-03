@@ -2,6 +2,7 @@ package com.example.lectorcomicsylibros.reader.comic
 
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.gestures.calculateZoom
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.Box
@@ -37,25 +38,44 @@ fun ZoomableImage(
         label = "ZoomScale"
     )
 
-    Box(
-        modifier = modifier
-            .fillMaxSize()
-            .pointerInput(file) {
-                detectTransformGestures { _, pan, zoom, _ ->
-                    val newScale = (scale * zoom).coerceIn(1f, 5f)
-                    scale = newScale
+    val transformModifier = if (scale > 1.01f) {
+        Modifier.pointerInput(file, scale) {
+            detectTransformGestures { _, pan, zoom, _ ->
+                val newScale = (scale * zoom).coerceIn(1f, 5f)
+                scale = newScale
 
-                    if (newScale > 1f) {
-                        val maxOffsetX = (newScale - 1f) * size.width / 2f
-                        val maxOffsetY = (newScale - 1f) * size.height / 2f
-                        val newOffsetX = (offset.x + pan.x).coerceIn(-maxOffsetX, maxOffsetX)
-                        val newOffsetY = (offset.y + pan.y).coerceIn(-maxOffsetY, maxOffsetY)
-                        offset = Offset(newOffsetX, newOffsetY)
-                    } else {
-                        offset = Offset.Zero
+                if (newScale > 1f) {
+                    val maxOffsetX = (newScale - 1f) * size.width / 2f
+                    val maxOffsetY = (newScale - 1f) * size.height / 2f
+                    val newOffsetX = (offset.x + pan.x).coerceIn(-maxOffsetX, maxOffsetX)
+                    val newOffsetY = (offset.y + pan.y).coerceIn(-maxOffsetY, maxOffsetY)
+                    offset = Offset(newOffsetX, newOffsetY)
+                } else {
+                    offset = Offset.Zero
+                }
+            }
+        }
+    } else {
+        Modifier.pointerInput(file) {
+            awaitPointerEventScope {
+                while (true) {
+                    val event = awaitPointerEvent()
+                    if (event.changes.size >= 2) {
+                        val zoomChange = event.calculateZoom()
+                        if (zoomChange != 1f) {
+                            scale = (scale * zoomChange).coerceIn(1f, 5f)
+                            event.changes.forEach { it.consume() }
+                        }
                     }
                 }
             }
+        }
+    }
+
+    Box(
+        modifier = modifier
+            .fillMaxSize()
+            .then(transformModifier)
             .pointerInput(file) {
                 detectTapGestures(
                     onTap = { onTap() },

@@ -9,7 +9,9 @@ class MediaFormatTest {
     @Test
     fun testMediaFormatDetectionFromFileName() {
         assertEquals(MediaFormat.CBZ, MediaFormat.fromFileNameOrMime("comic.cbz"))
+        assertEquals(MediaFormat.CBZ, MediaFormat.fromFileNameOrMime("archive.zip"))
         assertEquals(MediaFormat.CBR, MediaFormat.fromFileNameOrMime("comic.cbr"))
+        assertEquals(MediaFormat.CBR, MediaFormat.fromFileNameOrMime("archive.rar"))
         assertEquals(MediaFormat.EPUB, MediaFormat.fromFileNameOrMime("book.epub"))
         assertEquals(MediaFormat.PDF, MediaFormat.fromFileNameOrMime("document.pdf"))
         assertEquals(MediaFormat.UNKNOWN, MediaFormat.fromFileNameOrMime("unknown.txt"))

@@ -2,13 +2,11 @@ package com.example.lectorcomicsylibros.util
 
 import android.content.Context
 import android.content.Intent
-import android.graphics.Bitmap
-import android.graphics.pdf.PdfRenderer
 import android.net.Uri
-import android.os.ParcelFileDescriptor
 import android.provider.OpenableColumns
 import com.example.lectorcomicsylibros.data.model.MediaFormat
 import com.example.lectorcomicsylibros.data.model.MediaItem
+import com.example.lectorcomicsylibros.reader.comic.ComicExtractor
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -42,8 +40,8 @@ object FileImportHelper {
         val coverFile = File(coversDir, "${System.currentTimeMillis()}_${fileName.hashCode()}.jpg")
 
         when (format) {
-            MediaFormat.CBZ -> {
-                val result = extractCbzCoverAndPageCount(context, uri, coverFile)
+            MediaFormat.CBZ, MediaFormat.CBR, MediaFormat.PDF -> {
+                val result = ComicExtractor.extractComicCoverAndPageCount(context, uri, format.name, coverFile)
                 coverPath = result.first
                 totalPages = result.second
             }
@@ -52,12 +50,7 @@ object FileImportHelper {
                 coverPath = result.first
                 totalPages = result.second
             }
-            MediaFormat.PDF -> {
-                val result = extractPdfCoverAndPageCount(context, uri, coverFile)
-                coverPath = result.first
-                totalPages = result.second
-            }
-            MediaFormat.CBR, MediaFormat.UNKNOWN -> {
+            MediaFormat.UNKNOWN -> {
                 totalPages = 0
             }
         }
@@ -90,44 +83,6 @@ object FileImportHelper {
             name = uri.path?.substringAfterLast('/')
         }
         return name
-    }
-
-    private fun extractCbzCoverAndPageCount(context: Context, uri: Uri, targetCoverFile: File): Pair<String?, Int> {
-        var firstImageBytes: ByteArray? = null
-        var imageCount = 0
-
-        try {
-            context.contentResolver.openInputStream(uri)?.use { inputStream ->
-                ZipInputStream(inputStream).use { zipStream ->
-                    var entry = zipStream.nextEntry
-                    while (entry != null) {
-                        if (!entry.isDirectory) {
-                            val entryName = entry.name.lowercase()
-                            if (entryName.endsWith(".jpg") || entryName.endsWith(".jpeg") ||
-                                entryName.endsWith(".png") || entryName.endsWith(".webp")
-                            ) {
-                                imageCount++
-                                if (firstImageBytes == null) {
-                                    firstImageBytes = zipStream.readBytes()
-                                }
-                            }
-                        }
-                        zipStream.closeEntry()
-                        entry = zipStream.nextEntry
-                    }
-                }
-            }
-
-            firstImageBytes?.let { bytes ->
-                FileOutputStream(targetCoverFile).use { out ->
-                    out.write(bytes)
-                }
-                return Pair(targetCoverFile.absolutePath, imageCount)
-            }
-        } catch (e: Exception) {
-            e.printStackTrace()
-        }
-        return Pair(null, imageCount)
     }
 
     private fun extractEpubCoverAndPageCount(context: Context, uri: Uri, targetCoverFile: File): Pair<String?, Int> {
@@ -166,45 +121,11 @@ object FileImportHelper {
                 FileOutputStream(targetCoverFile).use { out ->
                     out.write(bytes)
                 }
-                return Pair(targetCoverFile.absolutePath, maxOf(chapterCount, 1))
+                return Pair("file://${targetCoverFile.absolutePath}", maxOf(chapterCount, 1))
             }
         } catch (e: Exception) {
             e.printStackTrace()
         }
         return Pair(null, maxOf(chapterCount, 1))
-    }
-
-    private fun extractPdfCoverAndPageCount(context: Context, uri: Uri, targetCoverFile: File): Pair<String?, Int> {
-        var pfd: ParcelFileDescriptor? = null
-        var pdfRenderer: PdfRenderer? = null
-        try {
-            pfd = context.contentResolver.openFileDescriptor(uri, "r")
-            if (pfd != null) {
-                pdfRenderer = PdfRenderer(pfd)
-                val pageCount = pdfRenderer.pageCount
-                if (pageCount > 0) {
-                    val page = pdfRenderer.openPage(0)
-                    val bitmap = Bitmap.createBitmap(page.width, page.height, Bitmap.Config.ARGB_8888)
-                    page.render(bitmap, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
-                    page.close()
-
-                    FileOutputStream(targetCoverFile).use { out ->
-                        bitmap.compress(Bitmap.CompressFormat.JPEG, 85, out)
-                    }
-                    bitmap.recycle()
-                    return Pair(targetCoverFile.absolutePath, pageCount)
-                }
-            }
-        } catch (e: Exception) {
-            e.printStackTrace()
-        } finally {
-            try {
-                pdfRenderer?.close()
-                pfd?.close()
-            } catch (e: Exception) {
-                e.printStackTrace()
-            }
-        }
-        return Pair(null, 0)
     }
 }

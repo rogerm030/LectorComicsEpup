@@ -17,6 +17,15 @@ object ComicExtractor {
 
     private val IMAGE_EXTENSIONS = setOf("jpg", "jpeg", "png", "webp", "bmp")
 
+    private fun isInvalidEntryName(name: String): Boolean {
+        val lower = name.lowercase()
+        if (lower.contains("__macosx")) return true
+        val fileName = lower.substringAfterLast('/')
+        if (fileName.startsWith(".")) return true
+        if (fileName.contains("metadata") || fileName == "thumbs.db" || fileName == ".ds_store") return true
+        return false
+    }
+
     suspend fun extractComicPages(
         context: Context,
         fileUriString: String,
@@ -37,6 +46,20 @@ object ComicExtractor {
         }
     }
 
+    suspend fun extractComicCoverAndPageCount(
+        context: Context,
+        uri: Uri,
+        format: String,
+        targetCoverFile: File
+    ): Pair<String?, Int> = withContext(Dispatchers.IO) {
+        when (format.uppercase()) {
+            "CBZ" -> extractCbzCoverAndPageCount(context, uri, targetCoverFile)
+            "CBR" -> extractCbrCoverAndPageCount(context, uri, targetCoverFile)
+            "PDF" -> extractPdfCoverAndPageCount(context, uri, targetCoverFile)
+            else -> extractCbzCoverAndPageCount(context, uri, targetCoverFile)
+        }
+    }
+
     private fun extractCbz(context: Context, uri: Uri, targetDir: File): List<File> {
         val pageEntries = mutableMapOf<String, ByteArray>()
         try {
@@ -44,7 +67,7 @@ object ComicExtractor {
                 ZipInputStream(inputStream).use { zip ->
                     var entry = zip.nextEntry
                     while (entry != null) {
-                        if (!entry.isDirectory) {
+                        if (!entry.isDirectory && !isInvalidEntryName(entry.name)) {
                             val name = entry.name
                             val ext = name.substringAfterLast('.', "").lowercase()
                             if (ext in IMAGE_EXTENSIONS) {
@@ -77,6 +100,50 @@ object ComicExtractor {
         return resultFiles
     }
 
+    private fun extractCbzCoverAndPageCount(context: Context, uri: Uri, targetCoverFile: File): Pair<String?, Int> {
+        val pageEntries = mutableMapOf<String, ByteArray>()
+        try {
+            context.contentResolver.openInputStream(uri)?.use { inputStream ->
+                ZipInputStream(inputStream).use { zip ->
+                    var entry = zip.nextEntry
+                    while (entry != null) {
+                        if (!entry.isDirectory && !isInvalidEntryName(entry.name)) {
+                            val name = entry.name
+                            val ext = name.substringAfterLast('.', "").lowercase()
+                            if (ext in IMAGE_EXTENSIONS) {
+                                pageEntries[name] = zip.readBytes()
+                            }
+                        }
+                        zip.closeEntry()
+                        entry = zip.nextEntry
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+
+        val sortedNames = pageEntries.keys.sortedWith(naturalOrderComparator())
+        val totalPages = sortedNames.size
+
+        if (sortedNames.isNotEmpty()) {
+            val firstKey = sortedNames.first()
+            val bytes = pageEntries[firstKey]
+            if (bytes != null) {
+                try {
+                    FileOutputStream(targetCoverFile).use { out ->
+                        out.write(bytes)
+                    }
+                    return Pair("file://${targetCoverFile.absolutePath}", totalPages)
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
+            }
+        }
+
+        return Pair(null, totalPages)
+    }
+
     private fun extractCbr(context: Context, uri: Uri, targetDir: File): List<File> {
         var tempCbrFile: File? = null
         try {
@@ -94,11 +161,31 @@ object ComicExtractor {
         }
 
         return targetDir.walkTopDown()
-            .filter { it.isFile && it.extension.lowercase() in IMAGE_EXTENSIONS }
+            .filter { it.isFile && !isInvalidEntryName(it.path) && it.extension.lowercase() in IMAGE_EXTENSIONS }
             .sortedWith(Comparator { f1, f2 ->
                 naturalOrderComparator().compare(f1.name, f2.name)
             })
             .toList()
+    }
+
+    private fun extractCbrCoverAndPageCount(context: Context, uri: Uri, targetCoverFile: File): Pair<String?, Int> {
+        val tempDir = File(context.cacheDir, "temp_cbr_${System.currentTimeMillis()}")
+        tempDir.mkdirs()
+        try {
+            val pages = extractCbr(context, uri, tempDir)
+            val totalPages = pages.size
+            if (pages.isNotEmpty()) {
+                val firstPage = pages.first()
+                firstPage.copyTo(targetCoverFile, overwrite = true)
+                return Pair("file://${targetCoverFile.absolutePath}", totalPages)
+            }
+            return Pair(null, totalPages)
+        } catch (e: Exception) {
+            e.printStackTrace()
+            return Pair(null, 0)
+        } finally {
+            tempDir.deleteRecursively()
+        }
     }
 
     private fun extractPdf(context: Context, uri: Uri, targetDir: File): List<File> {
@@ -139,6 +226,39 @@ object ComicExtractor {
             }
         }
         return resultFiles
+    }
+
+    private fun extractPdfCoverAndPageCount(context: Context, uri: Uri, targetCoverFile: File): Pair<String?, Int> {
+        var pfd: ParcelFileDescriptor? = null
+        var pdfRenderer: PdfRenderer? = null
+        try {
+            pfd = context.contentResolver.openFileDescriptor(uri, "r")
+            if (pfd != null) {
+                pdfRenderer = PdfRenderer(pfd)
+                val pageCount = pdfRenderer.pageCount
+                if (pageCount > 0) {
+                    val page = pdfRenderer.openPage(0)
+                    val bitmap = Bitmap.createBitmap(page.width, page.height, Bitmap.Config.ARGB_8888)
+                    page.render(bitmap, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
+                    page.close()
+
+                    FileOutputStream(targetCoverFile).use { out ->
+                        bitmap.compress(Bitmap.CompressFormat.JPEG, 85, out)
+                    }
+                    bitmap.recycle()
+                    return Pair("file://${targetCoverFile.absolutePath}", pageCount)
+                }
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        } finally {
+            try {
+                pdfRenderer?.close()
+                pfd?.close()
+            } catch (_: Exception) {
+            }
+        }
+        return Pair(null, 0)
     }
 
     fun naturalOrderComparator(): Comparator<String> {

@@ -6,18 +6,23 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.itemsIndexed
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ViewList
 import androidx.compose.material.icons.filled.ChevronLeft
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.GridView
+import androidx.compose.material.icons.filled.SwapVert
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -120,15 +125,32 @@ fun ComicReaderScreen(
         pageCount = { totalPages }
     )
 
-    // Sync pagerState -> ViewModel
-    LaunchedEffect(pagerState.currentPage) {
-        viewModel.onPageChanged(pagerState.currentPage)
+    val lazyListState = rememberLazyListState(
+        initialFirstVisibleItemIndex = uiState.currentPage.coerceIn(0, totalPages - 1)
+    )
+
+    // Sync Horizontal Pager -> ViewModel
+    LaunchedEffect(pagerState.currentPage, uiState.scrollMode) {
+        if (uiState.scrollMode == ComicScrollMode.HORIZONTAL) {
+            viewModel.onPageChanged(pagerState.currentPage)
+        }
     }
 
-    // Sync ViewModel -> pagerState (e.g., from gallery sheet jump)
+    // Sync Vertical LazyColumn -> ViewModel
+    LaunchedEffect(lazyListState, uiState.scrollMode) {
+        if (uiState.scrollMode == ComicScrollMode.VERTICAL) {
+            snapshotFlow { lazyListState.firstVisibleItemIndex }.collect { index ->
+                viewModel.onPageChanged(index)
+            }
+        }
+    }
+
+    // Sync ViewModel -> pagerState & lazyListState
     LaunchedEffect(uiState.currentPage) {
-        if (pagerState.currentPage != uiState.currentPage) {
+        if (uiState.scrollMode == ComicScrollMode.HORIZONTAL && pagerState.currentPage != uiState.currentPage) {
             pagerState.scrollToPage(uiState.currentPage)
+        } else if (uiState.scrollMode == ComicScrollMode.VERTICAL && lazyListState.firstVisibleItemIndex != uiState.currentPage) {
+            lazyListState.scrollToItem(uiState.currentPage)
         }
     }
 
@@ -149,7 +171,7 @@ fun ComicReaderScreen(
                                 overflow = TextOverflow.Ellipsis
                             )
                             Text(
-                                text = "Página ${pagerState.currentPage + 1} de $totalPages",
+                                text = "Página ${uiState.currentPage + 1} de $totalPages",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -161,6 +183,18 @@ fun ComicReaderScreen(
                         }
                     },
                     actions = {
+                        IconButton(onClick = { viewModel.toggleScrollMode() }) {
+                            Icon(
+                                imageVector = if (uiState.scrollMode == ComicScrollMode.HORIZONTAL)
+                                    Icons.Default.SwapVert
+                                else
+                                    Icons.AutoMirrored.Filled.ViewList,
+                                contentDescription = if (uiState.scrollMode == ComicScrollMode.HORIZONTAL)
+                                    "Modo Desplazamiento Vertical"
+                                else
+                                    "Modo Paginación Horizontal"
+                            )
+                        }
                         IconButton(onClick = { viewModel.toggleGallerySheet() }) {
                             Icon(Icons.Default.GridView, contentDescription = "Galería de páginas")
                         }
@@ -193,22 +227,30 @@ fun ComicReaderScreen(
                         ) {
                             IconButton(
                                 onClick = {
-                                    if (pagerState.currentPage > 0) {
-                                        scope.launch {
-                                            pagerState.animateScrollToPage(pagerState.currentPage - 1)
+                                    val target = (uiState.currentPage - 1).coerceAtLeast(0)
+                                    scope.launch {
+                                        if (uiState.scrollMode == ComicScrollMode.HORIZONTAL) {
+                                            pagerState.animateScrollToPage(target)
+                                        } else {
+                                            lazyListState.animateScrollToItem(target)
                                         }
                                     }
                                 },
-                                enabled = pagerState.currentPage > 0
+                                enabled = uiState.currentPage > 0
                             ) {
                                 Icon(Icons.Default.ChevronLeft, contentDescription = "Página anterior")
                             }
 
                             Slider(
-                                value = pagerState.currentPage.toFloat(),
+                                value = uiState.currentPage.toFloat(),
                                 onValueChange = { newPage ->
+                                    val target = newPage.toInt()
                                     scope.launch {
-                                        pagerState.scrollToPage(newPage.toInt())
+                                        if (uiState.scrollMode == ComicScrollMode.HORIZONTAL) {
+                                            pagerState.scrollToPage(target)
+                                        } else {
+                                            lazyListState.scrollToItem(target)
+                                        }
                                     }
                                 },
                                 valueRange = 0f..(totalPages - 1).coerceAtLeast(1).toFloat(),
@@ -220,20 +262,23 @@ fun ComicReaderScreen(
 
                             IconButton(
                                 onClick = {
-                                    if (pagerState.currentPage < totalPages - 1) {
-                                        scope.launch {
-                                            pagerState.animateScrollToPage(pagerState.currentPage + 1)
+                                    val target = (uiState.currentPage + 1).coerceAtMost(totalPages - 1)
+                                    scope.launch {
+                                        if (uiState.scrollMode == ComicScrollMode.HORIZONTAL) {
+                                            pagerState.animateScrollToPage(target)
+                                        } else {
+                                            lazyListState.animateScrollToItem(target)
                                         }
                                     }
                                 },
-                                enabled = pagerState.currentPage < totalPages - 1
+                                enabled = uiState.currentPage < totalPages - 1
                             ) {
                                 Icon(Icons.Default.ChevronRight, contentDescription = "Página siguiente")
                             }
                         }
 
                         Text(
-                            text = "Página ${pagerState.currentPage + 1} de $totalPages",
+                            text = "Página ${uiState.currentPage + 1} de $totalPages",
                             style = MaterialTheme.typography.labelMedium,
                             textAlign = TextAlign.Center,
                             modifier = Modifier.fillMaxWidth(),
@@ -250,15 +295,37 @@ fun ComicReaderScreen(
                 .fillMaxSize()
                 .padding(innerPadding)
         ) {
-            HorizontalPager(
-                state = pagerState,
-                modifier = Modifier.fillMaxSize()
-            ) { page ->
-                if (page in pageFiles.indices) {
-                    ZoomableImage(
-                        file = pageFiles[page],
-                        onTap = { viewModel.toggleControls() }
-                    )
+            if (uiState.scrollMode == ComicScrollMode.HORIZONTAL) {
+                HorizontalPager(
+                    state = pagerState,
+                    modifier = Modifier.fillMaxSize()
+                ) { page ->
+                    if (page in pageFiles.indices) {
+                        ZoomableImage(
+                            file = pageFiles[page],
+                            onTap = { viewModel.toggleControls() }
+                        )
+                    }
+                }
+            } else {
+                LazyColumn(
+                    state = lazyListState,
+                    modifier = Modifier.fillMaxSize(),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    itemsIndexed(pageFiles) { _, file ->
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .wrapContentHeight(),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            ZoomableImage(
+                                file = file,
+                                onTap = { viewModel.toggleControls() }
+                            )
+                        }
+                    }
                 }
             }
         }
@@ -297,7 +364,7 @@ fun ComicReaderScreen(
                         modifier = Modifier.fillMaxHeight(0.7f)
                     ) {
                         itemsIndexed(pageFiles) { index, file ->
-                            val isSelected = index == pagerState.currentPage
+                            val isSelected = index == uiState.currentPage
                             Box(
                                 modifier = Modifier
                                     .aspectRatio(0.7f)
@@ -309,7 +376,11 @@ fun ComicReaderScreen(
                                     )
                                     .clickable {
                                         scope.launch {
-                                            pagerState.scrollToPage(index)
+                                            if (uiState.scrollMode == ComicScrollMode.HORIZONTAL) {
+                                                pagerState.scrollToPage(index)
+                                            } else {
+                                                lazyListState.scrollToItem(index)
+                                            }
                                         }
                                         viewModel.closeGallerySheet()
                                     }

@@ -18,6 +18,11 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import java.io.File
 
+enum class ComicScrollMode {
+    HORIZONTAL,
+    VERTICAL
+}
+
 data class ComicReaderUiState(
     val isLoading: Boolean = true,
     val errorMessage: String? = null,
@@ -27,7 +32,8 @@ data class ComicReaderUiState(
     val totalPages: Int = 0,
     val showControls: Boolean = true,
     val showGallerySheet: Boolean = false,
-    val readingColorScheme: ReadingColorScheme = ReadingColorScheme.OSCURO
+    val readingColorScheme: ReadingColorScheme = ReadingColorScheme.OSCURO,
+    val scrollMode: ComicScrollMode = ComicScrollMode.HORIZONTAL
 )
 
 class ComicReaderViewModel(
@@ -124,6 +130,15 @@ class ComicReaderViewModel(
         viewModelScope.launch {
             SettingsRepository.getInstance(getApplication()).updateReadingColorScheme(scheme)
         }
+    }
+
+    fun toggleScrollMode() {
+        val newMode = if (_uiState.value.scrollMode == ComicScrollMode.HORIZONTAL) {
+            ComicScrollMode.VERTICAL
+        } else {
+            ComicScrollMode.HORIZONTAL
+        }
+        _uiState.update { it.copy(scrollMode = newMode) }
     }
 
     fun toggleControls() {

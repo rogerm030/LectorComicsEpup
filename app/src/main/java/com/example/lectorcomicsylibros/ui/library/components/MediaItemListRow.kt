@@ -70,10 +70,17 @@ fun MediaItemListRow(
                 contentAlignment = Alignment.Center
             ) {
                 val coverPath = item.coverPath
-                val hasCover = !coverPath.isNullOrBlank() && File(coverPath).exists()
+                val coverFile = remember(coverPath) {
+                    if (!coverPath.isNullOrBlank()) {
+                        val cleanPath = if (coverPath.startsWith("file://")) coverPath.removePrefix("file://") else coverPath
+                        File(cleanPath)
+                    } else null
+                }
+                val hasCover = coverFile != null && coverFile.exists()
+
                 if (hasCover && coverPath != null) {
                     AsyncImage(
-                        model = File(coverPath),
+                        model = coverPath,
                         contentDescription = item.title,
                         modifier = Modifier.fillMaxSize(),
                         contentScale = ContentScale.Crop
